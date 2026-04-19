@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Académico Capacitación vs Optativas</title>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <style>
+        body{ font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:#f4f6fb; margin:0; }
+        header{ background:#1f2a44; color:white; padding:20px; text-align:center; font-size:24px; font-weight: bold; }
+        .container{ padding:20px; }
+        .card{ background:white; padding:15px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 8px rgba(0,0,0,.08); }
+        .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(450px,1fr)); gap:20px; }
+        .full-width { grid-column: 1 / -1; width: 100%; }
+        .kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-bottom:20px; }
+        .kpi{ background:white; padding:15px; text-align:center; border-radius:10px; box-shadow:0 1px 6px rgba(0,0,0,.08); border-top: 4px solid #1f6feb; }
+        .kpi h2{ margin:0; font-size:26px; color:#1f2a44; }
+        .filters{ display:flex; gap:10px; flex-wrap:wrap; align-items: center; }
+        .filter-group { display: flex; flex-direction: column; gap: 5px; }
+        .filter-group label { font-size: 11px; font-weight: bold; color: #555; text-transform: uppercase; }
+        select{ padding:8px; border-radius:5px; border:1px solid #ccc; min-width: 160px; }
+        button{ background:#1f6feb; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight: bold; height: 35px; margin-top: 15px; }
+        button:hover{ background: #1558b8; }
+        table{ width:100%; border-collapse:collapse; font-size:13px; margin-top: 10px; }
+        th{ background:#1f2a44; color:white; padding:10px; text-align: left; }
+        td{ padding:8px; border-bottom:1px solid #eee; }
+        tr:hover{ background:#f4f7ff; }
+        .badge{ background:#2ecc71; color:white; padding:3px 8px; border-radius:12px; font-size:11px; font-weight: bold; }
+        .badge-total{ background:#34495e; color:white; padding:3px 8px; border-radius:12px; font-size:11px; font-weight: bold; }
+        .badge-grupos{ background:#f39c12; color:white; padding:3px 8px; border-radius:12px; font-size:11px; font-weight: bold; }
+        .controls { display: flex; align-items: center; gap: 15px; }
+        input[type="file"] { font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<header>Dashboard Académico — Capacitación vs Optativas</header>
+
+<div class="container">
+    <div class="card">
+        <h3>Cargar Información (JSON)</h3>
+        <div class="controls">
+            <div>
+                <label><strong>CAPACITACIONES:</strong></label>
+                <input type="file" id="capFile" accept=".json">
+            </div>
+            <div>
+                <label><strong>OPTATIVAS:</strong></label>
+                <input type="file" id="optFile" accept=".json">
+            </div>
+            <button onclick="loadFiles()">Cargar Información</button>
+            <button onclick="clearData()" style="background:#e74c3c">Limpiar Datos</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Filtros de Análisis</h3>
+        <div class="filters">
+            <div class="filter-group">
+                <label>Capacitación</label>
+                <select id="capFilter" onchange="updateDashboard()"><option value="ALL">Todas</option></select>
+            </div>
+            <div class="filter-group">
+                <label>Plantel</label>
+                <select id="plantelFilter" onchange="updateDashboard()"><option value="ALL">Todos</option></select>
+            </div>
+            <div class="filter-group">
+                <label>Sector</label>
+                <select id="sectorFilter" onchange="updateDashboard()"><option value="ALL">Todos</option></select>
+            </div>
+            <div class="filter-group">
+                <label>Tipo</label>
+                <select id="tipoFilter" onchange="updateDashboard()"><option value="ALL">Todos</option></select>
+            </div>
+            <div class="filter-group">
+                <label>Semestre</label>
+                <select id="semestreFilter" onchange="updateDashboard()"><option value="ALL">Todos</option></select>
+            </div>
+        </div>
+    </div>
+
+    <div class="kpis">
+        <div class="kpi"><h2 id="kpiCap">0</h2>Capacitaciones</div>
+        <div class="kpi"><h2 id="kpiPlanteles">0</h2>Planteles</div>
+        <div class="kpi"><h2 id="kpiAlumnos">0</h2>Total Alumnos</div>
+        <div class="kpi"><h2 id="kpiOpt">0</h2>Optativas Únicas</div>
+    </div>
+
+    <div class="grid">
+        <div class="card"><h3>Población por Plantel</h3><div id="chartTotalPlantel"></div></div>
+        <div class="card"><h3>Distribución por Género</h3><div id="chartGenero"></div></div>
+        <div class="card"><h3>Cobertura por Capacitación</h3><div id="chart1"></div></div>
+        <div class="card"><h3>Diversidad de Optativas</h3><div id="chart2"></div></div>
+        
+        <div class="card full-width">
+            <h3>Matriz Optativas vs Capacitación (Vista Detallada)</h3>
+            <div id="chart3" style="height: 800px;"></div>
+        </div>
+        
+        <div class="card full-width">
+            <h3>Mapa Estratégico (Frecuencia vs Diversidad)</h3>
+            <div id="chart4" style="height: 500px;"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Detalle por Plantel</h3>
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Plantel</th>
+                        <th>Sector</th>
+                        <th>Tipo</th>
+                        <th>Capacitación</th>
+                        <th>Sem.</th>
+                        <th>Grupos Totales</th>
+                        <th>Hombres</th>
+                        <th>Mujeres</th>
+                        <th>Total Alumnos</th>
+                        <th># Optativas</th>
+                        <th>Nombres de Optativas</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaPlanteles"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let capacitaciones = [];
+let optativas = [];
+
+window.onload = function() { loadLocal(); };
+
+function saveLocal() {
+    localStorage.setItem("capacitaciones_v5", JSON.stringify(capacitaciones));
+    localStorage.setItem("optativas_v5", JSON.stringify(optativas));
+}
+
+function loadLocal() {
+    let c = localStorage.getItem("capacitaciones_v5");
+    let o = localStorage.getItem("optativas_v5");
+    if (c && o) {
+        capacitaciones = JSON.parse(c);
+        optativas = JSON.parse(o);
+        init();
+    }
+}
+
+function clearData() {
+    localStorage.clear();
+    location.reload();
+}
+
+async function loadFiles() {
+    const capFile = document.getElementById("capFile").files[0];
+    const optFile = document.getElementById("optFile").files[0];
+    if (!capFile || !optFile) { alert("Selecciona ambos archivos JSON."); return; }
+    try {
+        const textCap = await capFile.text();
+        const textOpt = await optFile.text();
+        capacitaciones = JSON.parse(textCap);
+        optativas = JSON.parse(textOpt);
+        saveLocal();
+        init();
+    } catch (err) { alert("Error: " + err.message); }
+}
+
+function init() {
+    createFilters();
+    updateDashboard();
+}
+
+function createFilters() {
+    const fields = [
+        { id: "capFilter", key: "nombre" },
+        { id: "plantelFilter", key: "plantel" },
+        { id: "sectorFilter", key: "Sector" },
+        { id: "tipoFilter", key: "Tipo" },
+        { id: "semestreFilter", key: "semestre" }
+    ];
+
+    fields.forEach(f => {
+        const sel = document.getElementById(f.id);
+        const originalValue = sel.value;
+        sel.innerHTML = `<option value="ALL">${sel.id.includes('cap') ? 'Todas' : 'Todos'}</option>`;
+        
+        let values = [...new Set(capacitaciones.map(d => String(d[f.key] || '').trim()))]
+                    .filter(v => v !== '' && v !== 'null')
+                    .sort();
+
+        values.forEach(v => {
+            let op = document.createElement("option");
+            op.value = v; op.text = v; sel.appendChild(op);
+        });
+        sel.value = originalValue || "ALL";
+    });
+}
+
+function getOptativasPorCapacitacion(capNombre) {
+    if (!capNombre) return [];
+    return optativas
+        .filter(o => o[capNombre] === "X")
+        .map(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"])
+        .filter(Boolean);
+}
+
+function updateDashboard() {
+    if (capacitaciones.length === 0) return;
+
+    const fCap = document.getElementById("capFilter").value;
+    const fPlant = document.getElementById("plantelFilter").value;
+    const fSect = document.getElementById("sectorFilter").value;
+    const fTipo = document.getElementById("tipoFilter").value;
+    const fSem = document.getElementById("semestreFilter").value;
+
+    let filteredData = capacitaciones.filter(d => {
+        return (fCap === "ALL" || (d.nombre && d.nombre.trim() === fCap)) &&
+               (fPlant === "ALL" || (d.plantel && d.plantel.trim() === fPlant)) &&
+               (fSect === "ALL" || (d.Sector && d.Sector.trim() === fSect)) &&
+               (fTipo === "ALL" || (d.Tipo && d.Tipo.trim() === fTipo)) &&
+               (fSem === "ALL" || (String(d.semestre) === fSem));
+    });
+
+    let distinctCaps = [...new Set(filteredData.map(d => d.nombre?.trim()))].filter(Boolean);
+    let distinctPlants = [...new Set(filteredData.map(d => d.plantel?.trim()))].filter(Boolean);
+    let totalH = filteredData.reduce((sum, d) => sum + (Number(d.HombresTotal) || 0), 0);
+    let totalM = filteredData.reduce((sum, d) => sum + (Number(d.MujeresTotal) || 0), 0);
+    let totalAlumnos = filteredData.reduce((sum, d) => sum + (Number(d.Totales) || 0), 0);
+    
+    let totalOptList = [];
+    distinctCaps.forEach(c => { totalOptList = totalOptList.concat(getOptativasPorCapacitacion(c)); });
+    let uniqueOptsCount = [...new Set(totalOptList)].length;
+
+    document.getElementById("kpiCap").innerText = distinctCaps.length;
+    document.getElementById("kpiPlanteles").innerText = distinctPlants.length;
+    document.getElementById("kpiAlumnos").innerText = totalAlumnos.toLocaleString();
+    document.getElementById("kpiOpt").innerText = uniqueOptsCount;
+
+    // Gráficos Estándar
+    let plantSumMap = {};
+    filteredData.forEach(d => {
+        let p = d.plantel.trim();
+        plantSumMap[p] = (plantSumMap[p] || 0) + (Number(d.Totales) || 0);
+    });
+    Plotly.newPlot("chartTotalPlantel", [{ x: Object.keys(plantSumMap), y: Object.values(plantSumMap), type: "bar", marker: { color: '#1f2a44' } }], { margin: { t: 30 } });
+    Plotly.newPlot("chartGenero", [{ values: [totalH, totalM], labels: ['Hombres', 'Mujeres'], type: 'pie', hole: 0.4, marker: { colors: ['#3498db', '#e74c3c'] } }], { margin: { t: 30 } });
+
+    let capCountMap = {};
+    filteredData.forEach(d => { let c = d.nombre.trim(); capCountMap[c] = (capCountMap[c] || 0) + 1; });
+    Plotly.newPlot("chart1", [{ x: Object.values(capCountMap), y: Object.keys(capCountMap), type: "bar", orientation: "h", marker: { color: '#3498db' } }], { margin: { l: 200 } });
+
+    let optCountData = distinctCaps.map(c => getOptativasPorCapacitacion(c).length);
+    Plotly.newPlot("chart2", [{ x: distinctCaps, y: optCountData, type: "bar", marker: { color: '#2ecc71' } }], { margin: { b: 100 } });
+
+    // Matriz y Mapa Estratégico
+    let optNames = [...new Set(optativas.map(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"]))].filter(Boolean);
+    let matrix = optNames.map(optName => {
+        let rowData = optativas.find(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"] === optName);
+        return distinctCaps.map(c => (rowData && rowData[c] === "X") ? 1 : 0);
+    });
+    
+    Plotly.newPlot("chart3", [{ 
+        z: matrix, x: distinctCaps, y: optNames, type: "heatmap", 
+        colorscale: [[0, '#f9f9f9'], [1, '#1f2a44']], showscale: false,
+        xgap: 2, ygap: 2
+    }], { margin: { l: 350, r: 50, b: 150, t: 50 } });
+
+    Plotly.newPlot("chart4", [{ 
+        x: distinctCaps.map(c => capCountMap[c] || 0), 
+        y: optCountData, 
+        mode: "markers+text", 
+        text: distinctCaps, 
+        textposition: "top center", 
+        marker: { size: 14, color: '#e67e22', line: {color: 'white', width: 2} } 
+    }], { 
+        xaxis: { title: "Frecuencia (Planteles)" }, 
+        yaxis: { title: "Diversidad (Optativas)" },
+        margin: { l: 80, r: 80, b: 80, t: 50 }
+    });
+
+    buildTable(filteredData);
+}
+
+function buildTable(data) {
+    let tbody = document.getElementById("tablaPlanteles");
+    tbody.innerHTML = "";
+    data.forEach(d => {
+        let cap = d.nombre ? d.nombre.trim() : "N/A";
+        let opts = getOptativasPorCapacitacion(cap);
+        
+        // Cálculo de Total de Grupos (Suma grupos1 + grupos2)
+        let g1 = Number(d.grupos1) || 0;
+        let g2 = Number(d.grupos2) || 0;
+        let totalGrupos = g1 + g2;
+
+        let tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${(d.plantel || "").trim()}</td>
+            <td>${d.Sector || ""}</td>
+            <td>${d.Tipo || ""}</td>
+            <td><strong>${cap}</strong></td>
+            <td>${d.semestre || ""}</td>
+            <td><span class="badge-grupos">${totalGrupos}</span></td>
+            <td>${d.HombresTotal || 0}</td>
+            <td>${d.MujeresTotal || 0}</td>
+            <td><span class="badge-total">${d.Totales || 0}</span></td>
+            <td><span class="badge">${opts.length}</span></td>
+            <td>${opts.join(", ")}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+</script>
+</body>
+</html>
