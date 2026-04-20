@@ -121,7 +121,7 @@
 </div>
 
 <script>
-// URL del archivo JSON en tu repositorio de GitHub (Formato RAW)
+// URL del archivo JSON en formato RAW de GitHub
 const DATA_URL = 'https://raw.githubusercontent.com/ezamarripa-creator/CapacitacionesCOBAED/main/datos.json';
 
 let capacitaciones = [];
@@ -137,28 +137,35 @@ async function fetchGitHubData() {
     status.style.color = "#f39c12";
 
     try {
-        const response = await fetch(DATA_URL);
-        if (!response.ok) throw new Error("Error al obtener datos: " + response.statusText);
+        // Añadimos un timestamp para evitar cache del navegador al actualizar
+        const response = await fetch(`${DATA_URL}?t=${new Date().getTime()}`);
+        if (!response.ok) throw new Error("No se pudo conectar con el archivo en GitHub.");
         
         const data = await response.json();
         
-        // Se asume que el JSON contiene dos arreglos: capacitaciones y optativas
+        // Asignación de datos desde el JSON
         capacitaciones = data.capacitaciones || [];
         optativas = data.optativas || [];
 
-        status.innerText = "Datos cargados exitosamente desde GitHub";
-        status.style.color = "#2ecc71";
+        if (capacitaciones.length === 0) {
+            status.innerText = "Aviso: El archivo JSON se cargó pero está vacío.";
+            status.style.color = "#e67e22";
+        } else {
+            status.innerText = "Sincronizado con GitHub correctamente";
+            status.style.color = "#2ecc71";
+        }
         
         init();
     } catch (err) {
-        status.innerText = "Error: " + err.message;
+        status.innerText = "Error de conexión: Verifique la URL de GitHub o el formato del JSON.";
         status.style.color = "#e74c3c";
-        console.error(err);
+        console.error("Detalle del error:", err);
     }
 }
 
 function clearCache() {
-    location.reload();
+    // Forzamos la recarga completa de la página y la limpieza de datos en memoria
+    location.reload(true);
 }
 
 function init() {
@@ -178,7 +185,7 @@ function createFilters() {
     fields.forEach(f => {
         const sel = document.getElementById(f.id);
         const originalValue = sel.value;
-        sel.innerHTML = `<option value="ALL">${sel.id.includes('cap') ? 'Todas' : 'Todos'}</option>`;
+        sel.innerHTML = `<option value="ALL">${f.id === 'capFilter' ? 'Todas' : 'Todos'}</option>`;
         
         let values = [...new Set(capacitaciones.map(d => String(d[f.key] || '').trim()))]
                     .filter(v => v !== '' && v !== 'null')
@@ -188,7 +195,7 @@ function createFilters() {
             let op = document.createElement("option");
             op.value = v; op.text = v; sel.appendChild(op);
         });
-        sel.value = originalValue || "ALL";
+        sel.value = (values.includes(originalValue)) ? originalValue : "ALL";
     });
 }
 
@@ -232,22 +239,27 @@ function updateDashboard() {
     document.getElementById("kpiAlumnos").innerText = totalAlumnos.toLocaleString();
     document.getElementById("kpiOpt").innerText = uniqueOptsCount;
 
-    // Gráficos
+    // Gráfico de Población por Plantel
     let plantSumMap = {};
     filteredData.forEach(d => {
         let p = d.plantel.trim();
         plantSumMap[p] = (plantSumMap[p] || 0) + (Number(d.Totales) || 0);
     });
     Plotly.newPlot("chartTotalPlantel", [{ x: Object.keys(plantSumMap), y: Object.values(plantSumMap), type: "bar", marker: { color: '#1f2a44' } }], { margin: { t: 30 } });
+    
+    // Gráfico de Género
     Plotly.newPlot("chartGenero", [{ values: [totalH, totalM], labels: ['Hombres', 'Mujeres'], type: 'pie', hole: 0.4, marker: { colors: ['#3498db', '#e74c3c'] } }], { margin: { t: 30 } });
 
+    // Cobertura por Capacitación
     let capCountMap = {};
     filteredData.forEach(d => { let c = d.nombre.trim(); capCountMap[c] = (capCountMap[c] || 0) + 1; });
     Plotly.newPlot("chart1", [{ x: Object.values(capCountMap), y: Object.keys(capCountMap), type: "bar", orientation: "h", marker: { color: '#3498db' } }], { margin: { l: 200 } });
 
+    // Diversidad de Optativas
     let optCountData = distinctCaps.map(c => getOptativasPorCapacitacion(c).length);
     Plotly.newPlot("chart2", [{ x: distinctCaps, y: optCountData, type: "bar", marker: { color: '#2ecc71' } }], { margin: { b: 100 } });
 
+    // Matriz de Calor
     let optNames = [...new Set(optativas.map(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"]))].filter(Boolean);
     let matrix = optNames.map(optName => {
         let rowData = optativas.find(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"] === optName);
@@ -260,6 +272,7 @@ function updateDashboard() {
         xgap: 2, ygap: 2
     }], { margin: { l: 350, r: 50, b: 150, t: 50 } });
 
+    // Mapa Estratégico
     Plotly.newPlot("chart4", [{ 
         x: distinctCaps.map(c => capCountMap[c] || 0), 
         y: optCountData, 
@@ -292,9 +305,9 @@ function buildTable(data) {
             <td><strong>${cap}</strong></td>
             <td>${d.semestre || ""}</td>
             <td><span class="badge-grupos">${totalGrupos}</span></td>
-            <td>${d.HombresTotal || 0}</td>
-            <td>${d.MujeresTotal || 0}</td>
-            <td><span class="badge-total">${d.Totales || 0}</span></td>
+            <td>${(d.HombresTotal || 0).toLocaleString()}</td>
+            <td>${(d.MujeresTotal || 0).toLocaleString()}</td>
+            <td><span class="badge-total">${(d.Totales || 0).toLocaleString()}</span></td>
             <td><span class="badge">${opts.length}</span></td>
             <td>${opts.join(", ")}</td>
         `;
