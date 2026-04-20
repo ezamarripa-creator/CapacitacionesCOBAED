@@ -82,21 +82,16 @@
         <div class="card"><h3>Población por Plantel</h3><div id="chartTotalPlantel"></div></div>
         <div class="card"><h3>Distribución por Género</h3><div id="chartGenero"></div></div>
         <div class="card"><h3>Cobertura por Capacitación</h3><div id="chart1"></div></div>
-        <div class="card"><h3>Diversidad de Optativas</h3><div id="chart2"></div></div>
+        <div class="card"><h3>Frecuencia de Optativas</h3><div id="chart2"></div></div>
         
         <div class="card full-width">
-            <h3>Matriz Optativas vs Capacitación (Vista Detallada)</h3>
-            <div id="chart3" style="height: 800px;"></div>
-        </div>
-        
-        <div class="card full-width">
-            <h3>Mapa Estratégico (Frecuencia vs Diversidad)</h3>
-            <div id="chart4" style="height: 500px;"></div>
+            <h3>Relación Plantel vs Optativas</h3>
+            <div id="chart3" style="height: 600px;"></div>
         </div>
     </div>
 
     <div class="card">
-        <h3>Detalle por Plantel</h3>
+        <h3>Detalle de Registros</h3>
         <div style="overflow-x:auto;">
             <table>
                 <thead>
@@ -106,12 +101,11 @@
                         <th>Tipo</th>
                         <th>Capacitación</th>
                         <th>Sem.</th>
-                        <th>Grupos Totales</th>
+                        <th>Grupos</th>
                         <th>Hombres</th>
                         <th>Mujeres</th>
-                        <th>Total Alumnos</th>
-                        <th># Optativas</th>
-                        <th>Nombres de Optativas</th>
+                        <th>Total</th>
+                        <th>Optativas (UACS)</th>
                     </tr>
                 </thead>
                 <tbody id="tablaPlanteles"></tbody>
@@ -121,11 +115,9 @@
 </div>
 
 <script>
-// URL del archivo JSON en formato RAW de GitHub
 const DATA_URL = 'https://raw.githubusercontent.com/ezamarripa-creator/CapacitacionesCOBAED/main/datos.json';
 
-let capacitaciones = [];
-let optativas = [];
+let rawData = [];
 
 window.onload = function() { 
     fetchGitHubData(); 
@@ -133,38 +125,28 @@ window.onload = function() {
 
 async function fetchGitHubData() {
     const status = document.getElementById("statusMessage");
-    status.innerText = "Cargando datos desde GitHub...";
+    status.innerText = "Cargando datos...";
     status.style.color = "#f39c12";
 
     try {
-        // Añadimos un timestamp para evitar cache del navegador al actualizar
         const response = await fetch(`${DATA_URL}?t=${new Date().getTime()}`);
-        if (!response.ok) throw new Error("No se pudo conectar con el archivo en GitHub.");
+        if (!response.ok) throw new Error("Error HTTP: " + response.status);
         
-        const data = await response.json();
-        
-        // Asignación de datos desde el JSON
-        capacitaciones = data.capacitaciones || [];
-        optativas = data.optativas || [];
+        // El JSON es un Array directo según la imagen
+        rawData = await response.json();
 
-        if (capacitaciones.length === 0) {
-            status.innerText = "Aviso: El archivo JSON se cargó pero está vacío.";
-            status.style.color = "#e67e22";
-        } else {
-            status.innerText = "Sincronizado con GitHub correctamente";
-            status.style.color = "#2ecc71";
-        }
+        status.innerText = "Datos sincronizados (" + rawData.length + " registros)";
+        status.style.color = "#2ecc71";
         
         init();
     } catch (err) {
-        status.innerText = "Error de conexión: Verifique la URL de GitHub o el formato del JSON.";
+        status.innerText = "Error: No se pudo leer datos.json";
         status.style.color = "#e74c3c";
-        console.error("Detalle del error:", err);
+        console.error(err);
     }
 }
 
 function clearCache() {
-    // Forzamos la recarga completa de la página y la limpieza de datos en memoria
     location.reload(true);
 }
 
@@ -174,7 +156,7 @@ function init() {
 }
 
 function createFilters() {
-    const fields = [
+    const filterConfig = [
         { id: "capFilter", key: "nombre" },
         { id: "plantelFilter", key: "plantel" },
         { id: "sectorFilter", key: "Sector" },
@@ -182,33 +164,22 @@ function createFilters() {
         { id: "semestreFilter", key: "semestre" }
     ];
 
-    fields.forEach(f => {
-        const sel = document.getElementById(f.id);
-        const originalValue = sel.value;
-        sel.innerHTML = `<option value="ALL">${f.id === 'capFilter' ? 'Todas' : 'Todos'}</option>`;
-        
-        let values = [...new Set(capacitaciones.map(d => String(d[f.key] || '').trim()))]
-                    .filter(v => v !== '' && v !== 'null')
-                    .sort();
+    filterConfig.forEach(config => {
+        const sel = document.getElementById(config.id);
+        const uniqueValues = [...new Set(rawData.map(item => String(item[config.key] || '').trim()))]
+                            .filter(v => v !== '')
+                            .sort();
 
-        values.forEach(v => {
+        sel.innerHTML = `<option value="ALL">Todos/as</option>`;
+        uniqueValues.forEach(v => {
             let op = document.createElement("option");
             op.value = v; op.text = v; sel.appendChild(op);
         });
-        sel.value = (values.includes(originalValue)) ? originalValue : "ALL";
     });
 }
 
-function getOptativasPorCapacitacion(capNombre) {
-    if (!capNombre) return [];
-    return optativas
-        .filter(o => o[capNombre] === "X")
-        .map(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"])
-        .filter(Boolean);
-}
-
 function updateDashboard() {
-    if (capacitaciones.length === 0) return;
+    if (rawData.length === 0) return;
 
     const fCap = document.getElementById("capFilter").value;
     const fPlant = document.getElementById("plantelFilter").value;
@@ -216,100 +187,75 @@ function updateDashboard() {
     const fTipo = document.getElementById("tipoFilter").value;
     const fSem = document.getElementById("semestreFilter").value;
 
-    let filteredData = capacitaciones.filter(d => {
-        return (fCap === "ALL" || (d.nombre && d.nombre.trim() === fCap)) &&
-               (fPlant === "ALL" || (d.plantel && d.plantel.trim() === fPlant)) &&
-               (fSect === "ALL" || (d.Sector && d.Sector.trim() === fSect)) &&
-               (fTipo === "ALL" || (d.Tipo && d.Tipo.trim() === fTipo)) &&
-               (fSem === "ALL" || (String(d.semestre) === fSem));
+    const filtered = rawData.filter(d => {
+        return (fCap === "ALL" || String(d.nombre).trim() === fCap) &&
+               (fPlant === "ALL" || String(d.plantel).trim() === fPlant) &&
+               (fSect === "ALL" || String(d.Sector).trim() === fSect) &&
+               (fTipo === "ALL" || String(d.Tipo).trim() === fTipo) &&
+               (fSem === "ALL" || String(d.semestre) === fSem);
     });
 
-    let distinctCaps = [...new Set(filteredData.map(d => d.nombre?.trim()))].filter(Boolean);
-    let distinctPlants = [...new Set(filteredData.map(d => d.plantel?.trim()))].filter(Boolean);
-    let totalH = filteredData.reduce((sum, d) => sum + (Number(d.HombresTotal) || 0), 0);
-    let totalM = filteredData.reduce((sum, d) => sum + (Number(d.MujeresTotal) || 0), 0);
-    let totalAlumnos = filteredData.reduce((sum, d) => sum + (Number(d.Totales) || 0), 0);
-    
-    let totalOptList = [];
-    distinctCaps.forEach(c => { totalOptList = totalOptList.concat(getOptativasPorCapacitacion(c)); });
-    let uniqueOptsCount = [...new Set(totalOptList)].length;
+    // Cálculos KPI
+    const caps = [...new Set(filtered.map(d => d.nombre))];
+    const plants = [...new Set(filtered.map(d => d.plantel))];
+    const totalAlu = filtered.reduce((s, d) => s + (Number(d.Totales) || 0), 0);
+    const optativas = [...new Set(filtered.map(d => d["UACS OPTATIVAS"]))].filter(Boolean);
 
-    document.getElementById("kpiCap").innerText = distinctCaps.length;
-    document.getElementById("kpiPlanteles").innerText = distinctPlants.length;
-    document.getElementById("kpiAlumnos").innerText = totalAlumnos.toLocaleString();
-    document.getElementById("kpiOpt").innerText = uniqueOptsCount;
+    document.getElementById("kpiCap").innerText = caps.length;
+    document.getElementById("kpiPlanteles").innerText = plants.length;
+    document.getElementById("kpiAlumnos").innerText = totalAlu.toLocaleString();
+    document.getElementById("kpiOpt").innerText = optativas.length;
 
-    // Gráfico de Población por Plantel
-    let plantSumMap = {};
-    filteredData.forEach(d => {
-        let p = d.plantel.trim();
-        plantSumMap[p] = (plantSumMap[p] || 0) + (Number(d.Totales) || 0);
+    // Gráfico 1: Población por Plantel
+    const pMap = {};
+    filtered.forEach(d => { pMap[d.plantel] = (pMap[d.plantel] || 0) + Number(d.Totales); });
+    Plotly.newPlot("chartTotalPlantel", [{
+        x: Object.keys(pMap), y: Object.values(pMap), type: 'bar', marker: {color: '#1f2a44'}
+    }], { margin: {t:10} });
+
+    // Gráfico 2: Género
+    const h = filtered.reduce((s, d) => s + (Number(d.HombresTotal) || 0), 0);
+    const m = filtered.reduce((s, d) => s + (Number(d.MujeresTotal) || 0), 0);
+    Plotly.newPlot("chartGenero", [{
+        values: [h, m], labels: ['Hombres', 'Mujeres'], type: 'pie', hole: .4, marker: {colors:['#3498db', '#e74c3c']}
+    }], { margin: {t:10} });
+
+    // Gráfico 3: Cobertura Capacitación
+    const cMap = {};
+    filtered.forEach(d => { cMap[d.nombre] = (cMap[d.nombre] || 0) + 1; });
+    Plotly.newPlot("chart1", [{
+        x: Object.values(cMap), y: Object.keys(cMap), type: 'bar', orientation: 'h', marker: {color: '#3498db'}
+    }], { margin: {l: 150, t:10} });
+
+    // Gráfico 4: Frecuencia Optativas
+    const oMap = {};
+    filtered.forEach(d => { 
+        const opt = d["UACS OPTATIVAS"];
+        if(opt) oMap[opt] = (oMap[opt] || 0) + 1;
     });
-    Plotly.newPlot("chartTotalPlantel", [{ x: Object.keys(plantSumMap), y: Object.values(plantSumMap), type: "bar", marker: { color: '#1f2a44' } }], { margin: { t: 30 } });
-    
-    // Gráfico de Género
-    Plotly.newPlot("chartGenero", [{ values: [totalH, totalM], labels: ['Hombres', 'Mujeres'], type: 'pie', hole: 0.4, marker: { colors: ['#3498db', '#e74c3c'] } }], { margin: { t: 30 } });
+    Plotly.newPlot("chart2", [{
+        x: Object.values(oMap), y: Object.keys(oMap), type: 'bar', orientation: 'h', marker: {color: '#2ecc71'}
+    }], { margin: {l: 250, t:10} });
 
-    // Cobertura por Capacitación
-    let capCountMap = {};
-    filteredData.forEach(d => { let c = d.nombre.trim(); capCountMap[c] = (capCountMap[c] || 0) + 1; });
-    Plotly.newPlot("chart1", [{ x: Object.values(capCountMap), y: Object.keys(capCountMap), type: "bar", orientation: "h", marker: { color: '#3498db' } }], { margin: { l: 200 } });
-
-    // Diversidad de Optativas
-    let optCountData = distinctCaps.map(c => getOptativasPorCapacitacion(c).length);
-    Plotly.newPlot("chart2", [{ x: distinctCaps, y: optCountData, type: "bar", marker: { color: '#2ecc71' } }], { margin: { b: 100 } });
-
-    // Matriz de Calor
-    let optNames = [...new Set(optativas.map(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"]))].filter(Boolean);
-    let matrix = optNames.map(optName => {
-        let rowData = optativas.find(o => o["COMPONENTE DE FORMACIÓN FUNDAMENTAL EXTENDIDO"] === optName);
-        return distinctCaps.map(c => (rowData && rowData[c] === "X") ? 1 : 0);
-    });
-    
-    Plotly.newPlot("chart3", [{ 
-        z: matrix, x: distinctCaps, y: optNames, type: "heatmap", 
-        colorscale: [[0, '#f9f9f9'], [1, '#1f2a44']], showscale: false,
-        xgap: 2, ygap: 2
-    }], { margin: { l: 350, r: 50, b: 150, t: 50 } });
-
-    // Mapa Estratégico
-    Plotly.newPlot("chart4", [{ 
-        x: distinctCaps.map(c => capCountMap[c] || 0), 
-        y: optCountData, 
-        mode: "markers+text", 
-        text: distinctCaps, 
-        textposition: "top center", 
-        marker: { size: 14, color: '#e67e22', line: {color: 'white', width: 2} } 
-    }], { 
-        xaxis: { title: "Frecuencia (Planteles)" }, 
-        yaxis: { title: "Diversidad (Optativas)" },
-        margin: { l: 80, r: 80, b: 80, t: 50 }
-    });
-
-    buildTable(filteredData);
+    renderTable(filtered);
 }
 
-function buildTable(data) {
-    let tbody = document.getElementById("tablaPlanteles");
+function renderTable(data) {
+    const tbody = document.getElementById("tablaPlanteles");
     tbody.innerHTML = "";
     data.forEach(d => {
-        let cap = d.nombre ? d.nombre.trim() : "N/A";
-        let opts = getOptativasPorCapacitacion(cap);
-        let totalGrupos = (Number(d.grupos1) || 0) + (Number(d.grupos2) || 0);
-
-        let tr = document.createElement("tr");
+        const tr = document.createElement("tr");
         tr.innerHTML = `
-            <td>${(d.plantel || "").trim()}</td>
-            <td>${d.Sector || ""}</td>
-            <td>${d.Tipo || ""}</td>
-            <td><strong>${cap}</strong></td>
-            <td>${d.semestre || ""}</td>
-            <td><span class="badge-grupos">${totalGrupos}</span></td>
-            <td>${(d.HombresTotal || 0).toLocaleString()}</td>
-            <td>${(d.MujeresTotal || 0).toLocaleString()}</td>
-            <td><span class="badge-total">${(d.Totales || 0).toLocaleString()}</span></td>
-            <td><span class="badge">${opts.length}</span></td>
-            <td>${opts.join(", ")}</td>
+            <td>${d.plantel}</td>
+            <td>${d.Sector}</td>
+            <td>${d.Tipo}</td>
+            <td><strong>${d.nombre}</strong></td>
+            <td>${d.semestre}</td>
+            <td><span class="badge-grupos">${d.grupos1 || 0}</span></td>
+            <td>${d.hombres1 || 0}</td>
+            <td>${d.mujeres1 || 0}</td>
+            <td><span class="badge-total">${d.Totales}</span></td>
+            <td>${d["UACS OPTATIVAS"] || 'N/A'}</td>
         `;
         tbody.appendChild(tr);
     });
